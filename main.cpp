@@ -3,16 +3,11 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include "EthArpPacket.h"
 #include "ethhdr.h"
 #include "arphdr.h"
 #include<iostream>
 #include<string>
-#pragma pack(push, 1)
-struct EthArpPacket {
-	EthHdr eth_;
-	ArpHdr arp_;
-};
-#pragma pack(pop)
 
 void usage() {
 	printf("syntax : send-arp <interface> <sender ip> <target ip>\n");
