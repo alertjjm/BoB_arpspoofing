@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <arpa/inet.h>
-#include "ip.h"
 
 #pragma pack(push, 1)
 struct TcpHdr final {
@@ -14,6 +13,5 @@ struct TcpHdr final {
     u_short th_win;		/* window */
     u_short th_sum;		/* checksum */
     u_short th_urp;		/* urgent pointer */
-    u_int TH_OFF(){return (th_offx2 & 0xf0) >> 4;}
 };
 #pragma pack(pop)

