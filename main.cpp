@@ -102,7 +102,7 @@ void Relay(pcap_t* handle, const u_char* packet){
 	}
 	if(flag==1){
 		pcap_sendpacket(handle, relaypacket, size);
-	}
+	}	
 }
 void SendInfectFlood(pcap_t* handle){
 	for(int i=0; i<idx; i++){
