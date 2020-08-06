@@ -131,7 +131,7 @@ int parsing(const u_char* packet, Ip mip){
 		else
 			return INFECT;
 	}
-	else if(ntohs(ethhdr->type_)==EthHdr::Ip4){
+	else if(ntohs(ethhdr->type_)==EthHdr::Ip4 ||ntohs(ethhdr->type_)==EthHdr::Ip6){
 		IpHdr* iphdr=(IpHdr*)(packet+14);
 		Ip dip=ntohl(iphdr->ip_dst);
 		if(ntohl(iphdr->ip_src)==(uint32_t)mip)
@@ -219,7 +219,7 @@ int main(int argc, char* argv[]) {
 	clock_t start=clock();
 	while(1){
 		clock_t end=clock();
-		if((end - start)>2000){
+		if((end - start)>20000){
 			printf("flooding...\n");
 			SendInfectFlood(handle);
 			start=end;
