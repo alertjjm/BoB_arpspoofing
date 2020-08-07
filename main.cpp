@@ -101,6 +101,7 @@ void Relay(pcap_t* handle, const u_char* packet){
 		}
 	}
 	if(flag==1){
+		printf("-\n");
 		pcap_sendpacket(handle, relaypacket, size);
 	}	
 }
@@ -129,10 +130,10 @@ int parsing(const u_char* packet, Ip mip){
 		ArpHdr* arphdr=(ArpHdr*)(packet+14);
 		if(ntohl(arphdr->sip_)==(uint32_t)mip)
 			return -1;
-		else
+		else if(arphdr->op_==ArpHdr::Request)
 			return INFECT;
 	}
-	else if(ntohs(ethhdr->type_)==EthHdr::Ip4 ||ntohs(ethhdr->type_)==EthHdr::Ip6){
+	else {
 		IpHdr* iphdr=(IpHdr*)(packet+14);
 		Ip dip=ntohl(iphdr->ip_dst);
 		if(dip==mip)
