@@ -87,7 +87,7 @@ void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
 	int flag=0;
 	EthHdr* ethinfo=(EthHdr*)packet;
 	IpHdr* ipinfo=(IpHdr*)(packet+14);
-	int size=len%1514+1;//14+ntohs(ipinfo->ip_len);
+	int size=len;
 	u_char* relaypacket=(u_char*)malloc(sizeof(char)*size);
 	memcpy(relaypacket, packet, sizeof(char)*size);
 	EthHdr* ethhdr=(EthHdr*)relaypacket;
@@ -105,6 +105,10 @@ void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
 		int res = pcap_sendpacket(handle, relaypacket, size);
 		if (res != 0) {
 			fprintf(stderr, "pcap_sendpacket return %d error=%s\n",res, pcap_geterr(handle));
+			res = pcap_sendpacket(handle, relaypacket+1514, size-1514);
+			if (res != 0) {
+				fprintf(stderr, "pcap_sendpacket return %d error=%s Again\n",res, pcap_geterr(handle));
+			}
 		}
 	}	
 }
