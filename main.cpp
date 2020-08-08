@@ -110,7 +110,8 @@ void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
 				fprintf(stderr, "pcap_sendpacket return %d error=%s Again\n",res, pcap_geterr(handle));
 			}
 		}
-	}	
+	}
+	free(relaypacket);	
 }
 void SendInfectFlood(pcap_t* handle){
 	for(int i=0; i<idx; i++){
