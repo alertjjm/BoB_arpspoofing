@@ -2,7 +2,7 @@
 
 #include <arpa/inet.h>
 #include "mac.h"
-
+#define ETHHDRSIZE 14
 #pragma pack(push, 1)
 struct EthHdr final {
 	Mac      dmac_;

