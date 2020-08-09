@@ -140,8 +140,7 @@ int parsing(const u_char* packet, Ip mip){
 	EthHdr* ethhdr=(EthHdr*)packet;
 	if(ntohs(ethhdr->type_)==EthHdr::Arp){
 		ArpHdr* arphdr=(ArpHdr*)(packet+ETHHDRSIZE);
-		if(ntohs(arphdr->op_)==ArpHdr::Request)
-			return INFECT;
+		return INFECT;
 	}
 	else if(ntohs(ethhdr->type_)==EthHdr::Ip4 || ntohs(ethhdr->type_)==EthHdr::Ip6 ){
 		IpHdr* iphdr=(IpHdr*)(packet+ETHHDRSIZE);
