@@ -218,7 +218,6 @@ int main(int argc, char* argv[]) {
 	EthArpPacket packet;
 	EthTcpPacket* tcppacket;
 	EthArpPacket* arppacket;
-	
 	Ip myip=getmyip(dev);
 	Mac mmac=getmymac(dev);
 	printf("[info] collect my ip mac completed\n");
