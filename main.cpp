@@ -198,13 +198,13 @@ void init(pcap_t* handle,Ip senderip, Ip targetip, Ip myip, Mac mmac){
 int main(int argc, char* argv[]) {
 	//initial setting
 	int len=(argc-2)/2;
-	if (argc %2==1) {
+	if (argc %2==1 || argc==0) {
 		usage();
+		return -1;
 		if(len>MAX_AGENTS){
 			printf("Too may arguments!\n");
 			return -1;
 		}
-		return -1;
 	}
 	char* dev = argv[1];
 	char errbuf[PCAP_ERRBUF_SIZE];
