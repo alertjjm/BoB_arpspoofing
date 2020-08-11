@@ -11,6 +11,7 @@
 #define RELAY 1
 #define INFECT_REPLY 2
 #define INFECT_REQUEST 3
+#define INFECT_BROADCAST 4
 #define MAX_AGENTS 40
 #define MAX_PACKET_SIZE 1514
 #pragma pack(push, 1)
@@ -162,16 +163,24 @@ int parsing(const u_char* packet, Ip mip){
 	EthHdr* ethhdr=(EthHdr*)packet;
 	if(ntohs(ethhdr->type_)==EthHdr::Arp){
 		ArpHdr* arphdr=(ArpHdr*)(packet+ETHHDRSIZE);
+		Ip dip=ntohl(arphdr->tip_);
+		Ip sip=ntohl(arphdr->sip_);
+		if(dip==mip||sip==mip)//if related to my ip
+			return -1;
 		if(arphdr->op()==ArpHdr::Reply){
-			return INFECT_REPLY;
+			if(ethhdr->dmac_==Mac("ff:ff:ff:ff:ff:ff"))
+				return INFECT_BROADCAST;//reply&broadcast
+			else
+				return INFECT_REPLY;//reply&unicast
 		}
 		else
-			return INFECT_REQUEST;
+			return INFECT_REQUEST;//request&unicast
 	}
 	else {
 		IpHdr* iphdr=(IpHdr*)(packet+ETHHDRSIZE);
 		Ip dip=ntohl(iphdr->ip_dst);
-		if(dip==mip)// own to me
+		Ip sip=ntohl(iphdr->ip_src);
+		if(dip==mip||sip==mip)// own to me
 			return -1;
 		for(int i=0; i<idx; i++){
 			if(ethhdr->smac_==spoofarr[i].smac_)
