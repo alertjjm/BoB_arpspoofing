@@ -213,7 +213,7 @@ int main(int argc, char* argv[]) {
 	}
 	char* dev = argv[1];
 	char errbuf[PCAP_ERRBUF_SIZE];
-	pcap_t* handle = pcap_open_live(dev, MAX_PACKET_SIZE, 1, 1, errbuf);
+	pcap_t* handle = pcap_open_live(dev, BUFSIZ, 1, 1, errbuf);
 	pcap_set_immediate_mode(handle,3);
 	if (handle == nullptr) {
 		fprintf(stderr, "couldn't open device %s(%s)\n", dev, errbuf);
