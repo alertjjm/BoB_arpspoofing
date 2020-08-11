@@ -269,6 +269,8 @@ int main(int argc, char* argv[]) {
 			SendInfect(handle, arppacket->arp_.sip_);
 			break;
 		case INFECT_REPLY:
+			SendInfect(handle, arppacket->arp_.tip_);
+		case INFECT_BROADCAST:
 			SendInfectFlood(handle);
 		case RELAY:
 			Relay(handle, rawpacket,mmac,header->len);
