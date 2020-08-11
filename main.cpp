@@ -3,8 +3,8 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include "iphdr.h"
 #include "EthArpPacket.h"
-#include "EthTcpPacket.h"
 #include "ethhdr.h"
 #include "arphdr.h"
 #include<time.h>
@@ -127,7 +127,6 @@ void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int size){
 		}
 	}
 	if(flag==1){//if matched
-		EthTcpPacket* tcp=(EthTcpPacket*)relaypacket;
 		int res = pcap_sendpacket(handle, relaypacket, size);
 		if (res != 0) {
 			fprintf(stderr, "pcap_sendpacket return %d error=%s\n",res, pcap_geterr(handle));
@@ -221,8 +220,6 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 	const u_char* rawpacket;
-	EthArpPacket packet;
-	EthTcpPacket* tcppacket;
 	EthArpPacket* arppacket;
 	Ip myip=getmyip(dev);
 	Mac mmac=getmymac(dev);
