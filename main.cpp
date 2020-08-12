@@ -13,7 +13,6 @@
 #define INFECT_REQUEST 3
 #define INFECT_BROADCAST 4
 #define MAX_AGENTS 40
-#define MAX_PACKET_SIZE 1514
 #pragma pack(push, 1)
 struct Spoof final{
     Spoof(){}
