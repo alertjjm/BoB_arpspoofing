@@ -270,10 +270,13 @@ int main(int argc, char* argv[]) {
 			break;
 		case INFECT_REPLY:
 			SendInfect(handle, arppacket->arp_.tip_);
+			break;
 		case INFECT_BROADCAST:
 			SendInfectFlood(handle);
+			break;
 		case RELAY:
 			Relay(handle, rawpacket,mmac,header->len);
+			break;
 		default:
 			break;
 		}
